@@ -1,6 +1,6 @@
 package XML::Xerces::BagOfTricks;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 NAME
 
@@ -8,7 +8,7 @@ XML::Xerces::BagOfTricks - Perl library holding handy stuff for XML:Xerces
 
 =head1 SYNOPSIS
 
-  use XML::Xerces::BagOfTricks;
+  use XML::Xerces::BagOfTricks qw(:all);
 
   # get a nice DOM Document
   my $DOMDocument = getDocument($namespace,$root_tag);
@@ -16,11 +16,18 @@ XML::Xerces::BagOfTricks - Perl library holding handy stuff for XML:Xerces
   # get a nice Element containing a text node (i.e. <foo>bar</foo>)
   my $foo_elem = getTextElement($DOMDocument,'Foo','Bar');
 
+  # get a nice element with attributes (i.e '<Foo isBar='0' isFoo='1'/>')
+  my $foo_elem = getElement($DOMDocument,'Foo','isBar'=>0, 'isFoo'=>1);
+
+  # get a nice element with attributes that contains a text node
+  my $foo_elem = getElementwithText($DOMDocument,'Foo','Bar',isFoo=>1,isBar=>0);
+  # (i.e. <Foo isFoo='1' isBar='0'>Bar</Foo>)
+
   # if node is not of type Element then append its data to $contents
+  # based on examples in article by P T Darugar.
   if ( $NodeType[$node->getNodeType()] ne 'Element' ) {
 	    $contents .= $node->getData();
   }
-
   # or the easier..
   my $content = getTextContents($node);
 
@@ -32,14 +39,14 @@ XML::Xerces::BagOfTricks - Perl library holding handy stuff for XML:Xerces
 This module is designed to provide a bag of tricks for users of
 XML::Xerces DOM API. It provides some useful variables for
 looking up xerces-c enum values. There should also be some useful
-functions.
+functions that make dealing with DOM objects much easier.
 
 getTextContents() from 'Effective XML processing with DOM and XPath in Perl' 
-by Parand Tony Darugar (tdarugar@velocigen.com) IBM Developerworks Oct 1st 2001
+by Parand Tony Darugar, IBM Developerworks Oct 1st 2001
 
 =head2 EXPORT
 
-all - %NodeType @NodeType &getTextContents &getDocument &getXML &getTextElement
+all - %NodeType @NodeType &getTextContents &getDocument &getXML &getTextElement &getElement &getElementwithText
 
 =head1 FUNCTIONS
 
@@ -55,7 +62,7 @@ use AutoLoader qw(AUTOLOAD);
 our @ISA = qw(Exporter);
 
 our %EXPORT_TAGS = ( 'all' => [ qw(
-	%NodeType @NodeType &getTextContents &getDocument &getXML &getTextElement
+	%NodeType @NodeType &getTextContents &getDocument &getXML &getTextElement &getElement &getElementwithText
 ) ] );
 
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
@@ -76,8 +83,8 @@ our @NodeType = qw(ERROR ELEMENT_NODE ATTRIBUTE_NODE TEXT_NODE CDATA_SECTION_NOD
 
 # Preloaded methods go here.
 
-# blatently nicked from 'Effective XML processing with DOM and XPath in Perl'
-# by Parand Tony Darugar (tdarugar@velocigen.com) IBM Developerworks Oct 1st 2001
+# Based on example in 'Effective XML processing with DOM and XPath in Perl'
+# by Parand Tony Darugar, IBM Developerworks Oct 1st 2001
 
 =head2 getTextContents($node)
 
@@ -133,6 +140,51 @@ sub getTextElement {
     $field->appendChild($fieldvalue);
     return $field;
 }
+
+=head2 getElement($doc,$name,%attributes)
+
+    This function returns a nice XML::Xerces::DOMNode representing an element
+    with an appended Text subnode, based on the arguments provided.
+
+    In the example below $node would represent '<Foo isBar='0' isFoo='1'/>'
+
+    my $node = getElement($doc,'Foo','isBar'=>0, 'isFoo'=>1);
+
+=cut
+
+
+sub getElement {
+    my ($doc, $name, %attributes) = @_;
+    my $node = $doc->createElement($name);
+    foreach my $attr_name (keys %attributes) {
+	if (defined $attributes{$attr_name}) {
+	    $node->setAttribute($attr_name,$attributes{$attr_name});
+	}
+    }
+    return $node;
+}
+
+
+=head2 getElementwithText($DOMDocument,$node_name,$text,$attr_name=>$attr_value);
+
+  # get a nice element with attributes that contains a text node ( i.e. <Foo isFoo='1' isBar='0'>Bar</Foo> )
+  my $foo_elem = getElementwithText($DOMDocument,'Foo','Bar',isFoo=>1,isBar=>0);
+
+=cut
+
+sub getElementwithText {
+    my ($doc, $nodename, $textvalue, %attributes) = @_;
+    my $node = $doc->createElement($nodename);
+    if ($textvalue) {
+	my $text = $doc->createTextNode($textvalue);
+	$node->appendChild($text);
+    }
+    foreach my $attr_name (keys %attributes) {
+	$node->setAttribute($attr_name,$attributes{$attr_name}) if (defined $attributes{$attr_name});
+    }
+    return $node;
+}
+
 
 =head2 getDocument($namespace,$root_tag)
 
