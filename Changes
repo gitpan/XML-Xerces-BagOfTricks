@@ -1,0 +1,7 @@
+Revision history for Perl extension XML::Xerces::BagOfTricks.
+
+0.01  Mon Dec  1 14:51:10 2003
+	- original version; created by h2xs 1.23 with options
+		-X XML::Xerces::BagOfTricks
+        - only has small number of enum lookup vars
+
