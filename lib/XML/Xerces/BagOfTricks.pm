@@ -1,17 +1,21 @@
 package XML::Xerces::BagOfTricks;
 
-our $VERSION = '0.02';
-
 =head1 NAME
 
-XML::Xerces::BagOfTricks - Perl library holding handy stuff for XML:Xerces
+XML::Xerces::BagOfTricks - A library to make XML:Xerces easier and more perl-ish
 
 =head1 SYNOPSIS
 
   use XML::Xerces::BagOfTricks qw(:all);
 
-  # get a nice DOM Document
+  # get a nice (empty) DOM Document
   my $DOMDocument = getDocument($namespace,$root_tag);
+
+  # get a DOM Document from an XML file
+  my $DOMDocument = getDocumentFromXML (file=>$file);
+
+  # get a DOM Document from an XML file
+  my $DOMDocument = getDocumentFromXML(xml=>$xml);
 
   # get a nice Element containing a text node (i.e. <foo>bar</foo>)
   my $foo_elem = getTextElement($DOMDocument,'Foo','Bar');
@@ -38,15 +42,24 @@ XML::Xerces::BagOfTricks - Perl library holding handy stuff for XML:Xerces
 
 This module is designed to provide a bag of tricks for users of
 XML::Xerces DOM API. It provides some useful variables for
-looking up xerces-c enum values. There should also be some useful
-functions that make dealing with DOM objects much easier.
+looking up xerces-c enum values.
 
-getTextContents() from 'Effective XML processing with DOM and XPath in Perl' 
+It also provides functions that make dealing with, creating and
+printing DOM objects much easier.
+
+getTextContents() from 'Effective XML processing with DOM and XPath in Perl'
 by Parand Tony Darugar, IBM Developerworks Oct 1st 2001
 
 =head2 EXPORT
 
-all - %NodeType @NodeType &getTextContents &getDocument &getXML &getTextElement &getElement &getElementwithText
+':all' tag exports the following :
+
+%NodeType @NodeType $schemaparser $dtdparser $plainparser
+
+&getTextContents &getDocument &getDocumentFromXML &getXML
+
+&getTextElement &getElement &getElementwithText
+
 
 =head1 FUNCTIONS
 
@@ -59,23 +72,38 @@ use XML::Xerces;
 require Exporter;
 use AutoLoader qw(AUTOLOAD);
 
+our $VERSION = '0.03';
 our @ISA = qw(Exporter);
-
 our %EXPORT_TAGS = ( 'all' => [ qw(
-	%NodeType @NodeType &getTextContents &getDocument &getXML &getTextElement &getElement &getElementwithText
-) ] );
-
+				   %NodeType @NodeType $schemaparser $dtdparser $plainparser
+				   &getTextContents &getDocument &getDocumentFromXML &getXML &getTextElement
+				   &getElement &getElementwithText
+				   ) ] );
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 
-#our @EXPORT = qw(
-#
-#);
-
+# Xerces implementation and writer
 my $impl = XML::Xerces::DOMImplementationRegistry::getDOMImplementation('LS');
 my $writer = $impl->createDOMWriter();
 if ($writer->canSetFeature('format-pretty-print',1)) {
     $writer->setFeature('format-pretty-print',1);
 }
+
+# Xerces parsers (one for Schema, DTD and neither)
+my $validate = $XML::Xerces::AbstractDOMParser::Val_Auto;
+my $schemaparser = XML::Xerces::XercesDOMParser->new();
+my $dtdparser = XML::Xerces::XercesDOMParser->new();
+my $plainparser = XML::Xerces::XercesDOMParser->new();
+my $error_handler = XML::Xerces::PerlErrorHandler->new();
+my $c = 0;
+foreach ( $schemaparser, $dtdparser, $plainparser) {
+  $_->setValidationScheme ($validate);
+  $_->setDoNamespaces (1);
+  $_->setCreateEntityReferenceNodes(1);
+  $_->setErrorHandler($error_handler);
+}
+$schemaparser->setDoSchema (1);
+
+my $parser = $plainparser;
 
 our %NodeType;
 our @NodeType = qw(ERROR ELEMENT_NODE ATTRIBUTE_NODE TEXT_NODE CDATA_SECTION_NODE ENTITY_REFERENCE_NODE ENTITY_NODE PROCESSING_INSTRUCTION_NODE COMMENT_NODE DOCUMENT_NODE DOCUMENT_TYPE_NODE DOCUMENT_FRAGMENT_NODE NOTATION_NODE );
@@ -103,7 +131,6 @@ sub getTextContents {
 	return;
     }
     for my $child ($node->getChildNodes()) {
-	warn "node type : ", $NodeType[$child->getNodeType()];
 	if ( $NodeType[$child->getNodeType()] =~ /(?:TEXT|CDATA_SECTION)_NODE/ ) {
 	    $contents .= $child->getData();
 	}
@@ -134,7 +161,7 @@ sub getTextContents {
 
 sub getTextElement {
     my ($doc, $name, $value) = @_;
-    warn caller() unless $value;
+    warn "D'oh! it would be a good idea to provide a value to getTextElement : ", caller() unless $value;
     my $field = $doc->createElement($name);
     my $fieldvalue = $doc->createTextNode($value);
     $field->appendChild($fieldvalue);
@@ -229,6 +256,66 @@ sub getDocument {
     }
     return $doc;
 
+}
+
+=head2 getDocumentFromXML
+
+Returns an XML::Xerces::DOMDocument object based on the provided input
+
+my $DOMDocument = getDocumentFromXML(xml=>$xml);
+
+uses the XML::Xerces DOM parser to build a DOM Tree of the given xml
+
+my $DOMDocument = getDocumentFromXML (file=>$file);
+
+uses the XML::Xerces DOM parser to build a DOM Tree of the given xml
+
+=cut
+
+sub getDocumentFromXML {
+    my $key = shift;
+    my $value = shift;
+    my $mode;
+
+    if ( lc($key) eq 'xml') {
+	$mode = 'xml';
+    } elsif (lc $key eq 'file') {
+	$mode = 'file';
+    } else {
+	$mode = ($key =~ /^</) ? 'xml' : 'file' ;
+	$value = $key;
+    }
+
+    my $parser = $plainparser;
+
+    my $input;
+    if ($mode eq 'xml') {
+	eval { $input =  XML::Xerces::MemBufInputSource->new($value); };
+	XML::Xerces::error($@) if ($@);
+#	warn "got buffer : $input \n";
+    } else {
+	$input = $value;
+    }
+
+    eval { $parser->parse ($input);  };
+    XML::Xerces::error($@) if ($@);
+
+    my $doc;
+    if ($@) {
+	if ($@->isa("XML::Xerces::XMLException")) {
+	    warn("XML Exception: type = ".$@->getType.", "
+		 ."code = ".$@->getCode.", message = "
+		 .$@->getMessage.", src=".$@->getSrcFile." line "
+		 .$@->getSrcLine);
+	} else {
+	    warn "XML Problem - Got a ".ref($@)." back! we were expecting an XML::Xerces:DOMDocument";
+	    XML::Xerces::error($@);
+	}
+    } else {
+	$doc =  $parser->getDocument;
+#	warn "XML validated successfully\n";
+    }
+    return $doc;
 }
 
 =head2 getXML($DOMDocument)
